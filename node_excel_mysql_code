@@ -1,0 +1,99 @@
+const XLSX = require('xlsx');
+const mysql = require('mysql');
+
+// create a connection pool to the MySQL database
+const pool = mysql.createPool({
+  connectionLimit: 10,
+  host: 'localhost',
+  user: 'username',
+  password: 'password',
+  database: 'database_name'
+});
+
+// read the Excel file
+const workbook = XLSX.readFile('results.xlsx');
+
+// select the first worksheet
+const worksheet = workbook.Sheets[workbook.SheetNames[0]];
+
+// convert the worksheet to an array of objects
+const data = XLSX.utils.sheet_to_json(worksheet);
+
+// loop through the data and insert each row into the database
+data.forEach((row) => {
+  // calculate the cgpa and sgpa
+  const cgpa = calculateCGPA(row);
+  const sgpa = calculateSGPA(row);
+
+  // calculate pass/fail status
+  const status = calculateStatus(row);
+
+  // build the SQL query and parameters
+  const sql = `INSERT INTO student_results (name, subject1_grade, subject2_grade, subject3_grade, cgpa, sgpa, status) VALUES (?, ?, ?, ?, ?, ?, ?)`;
+  const params = [row.name, row.subject1_grade, row.subject2_grade, row.subject3_grade, cgpa, sgpa, status];
+
+  // get a connection from the pool and execute the query
+  pool.getConnection((err, connection) => {
+    if (err) {
+      console.error('Error getting connection from pool:', err);
+      return;
+    }
+
+    connection.query(sql, params, (err, result) => {
+      // release the connection back to the pool
+      connection.release();
+
+      if (err) {
+        console.error('Error inserting row into database:', err);
+        return;
+      }
+
+      console.log('Row inserted into database');
+    });
+  });
+});
+
+// function to calculate CGPA
+function calculateCGPA(row) {
+  const grades = [row.subject1_grade, row.subject2_grade, row.subject3_grade];
+  const credits = [3, 3, 3]; // assuming each subject is worth 3 credits
+  let totalGradePoints = 0;
+  let totalCredits = 0;
+  for (let i = 0; i < grades.length; i++) {
+    const grade = grades[i];
+    const credit = credits[i];
+    totalCredits += credit;
+    totalGradePoints += calculateGradePoints(grade) * credit;
+  }
+  return totalGradePoints / totalCredits;
+}
+
+// function to calculate SGPA
+function calculateSGPA(row) {
+  const grades = [row.subject1_grade, row.subject2_grade, row.subject3_grade];
+  const credits = [3, 3, 3]; // assuming each subject is worth 3 credits
+  const gradePoints = grades.map((grade) => calculateGradePoints(grade));
+  const totalGradePoints = gradePoints.reduce((sum, gradePoint, index) => {
+    const credit = credits[index];
+    return sum + gradePoint * credit;
+  }, 0);
+  return totalGradePoints / credits.reduce((sum, credit) => sum + credit, 0);
+}
+
+// function to calculate grade points
+function calculateGradePoints(grade) {
+  switch (grade) {
+    case 'A+':
+      return 4.0;
+    case 'A':
+      return 3.7;
+    case 'A-':
+      return 3.3;
+    case 'B+':
+      return 3.0;
+    case 'B':
+      return 2.7;
+    case 'B-':
+      return 2.3;
+   
+
